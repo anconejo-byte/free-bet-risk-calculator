@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Promo Risk Calculator Report</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }
+      h1, h2 { margin: 0 0 12px; }
+      p { margin: 0 0 10px; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+      th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; font-size: 14px; }
+      .meta { color: #334155; margin-bottom: 18px; }
+      .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 18px; }
+      input, select { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+      button { padding: 8px 12px; border: 1px solid #64748b; border-radius: 6px; background: #fff; cursor: pointer; }
+      .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+    </style>
+  </head>
+  <body>
+    <h1>Promo Risk Calculator Report</h1>
+    <p class="meta">Generated at: __GENERATED_AT__</p>
+    <p>This tool is a scenario-based promo risk model. It estimates theoretical promotional liability using adjustable assumptions. It is not actual realized P&amp;L, accounting liability, or a substitute for historical promo performance analysis.</p>
+    <div class="card">
+      <h2>Interactive HTML Editing Layer</h2>
+      <p>Edit the fields below directly in this HTML report and click Recalculate. No coding tools are required.</p>
+      <div class="grid">
+        <label>Free Bet Issued<input id="free_issuedFreeBets" type="number" step="any"></label>
+        <label>Free Bet Amount<input id="free_freeBetAmount" type="number" step="any"></label>
+        <label>Free Bet Win Rate %<input id="free_winRate" type="number" step="any"></label>
+        <label>Wager Eligible Users<input id="wager_eligibleUsers" type="number" step="any"></label>
+        <label>Wager Loss Rate %<input id="wager_lossRate" type="number" step="any"></label>
+        <label>Wager Cash Conversion %<input id="wager_refundCashConversionRate" type="number" step="any"></label>
+      </div>
+      <button id="recalculateBtn">Recalculate</button>
+      <p id="liveSummary" class="meta"></p>
+    </div>
+
+    <h2>Summary Metrics</h2>
+    <table><tbody>__SUMMARY_ROWS__</tbody></table>
+
+    <h2>Assumptions</h2>
+    <table><tbody>__ASSUMPTION_ROWS__</tbody></table>
+
+    <h2>Sensitivity (Net Risk)</h2>
+    <table>
+      <thead><tr><th>Metric</th><th>-10%</th><th>Base</th><th>+10%</th></tr></thead>
+      <tbody>
+        <tr><td>Redemption Rate</td><td>__SENS_RED_MINUS__</td><td>__SENS_RED_BASE__</td><td>__SENS_RED_PLUS__</td></tr>
+        <tr><td>Win Rate</td><td>__SENS_WIN_MINUS__</td><td>__SENS_WIN_BASE__</td><td>__SENS_WIN_PLUS__</td></tr>
+        <tr><td>Cash Conversion Rate</td><td>__SENS_CONV_MINUS__</td><td>__SENS_CONV_BASE__</td><td>__SENS_CONV_PLUS__</td></tr>
+      </tbody>
+    </table>
+
+    <script>
+      const free = __FREE_JSON__;
+      const wager = __WAGER_JSON__;
+
+      const pct = (v) => Number(v || 0) / 100;
+      const oddsToMultiple = (odds) => Number(odds) > 0 ? Number(odds) / 100 : 100 / Math.abs(Number(odds || -110));
+      const money = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v || 0);
+
+      const inputs = {
+        free_issuedFreeBets: 'issuedFreeBets',
+        free_freeBetAmount: 'freeBetAmount',
+        free_winRate: 'winRate',
+        wager_eligibleUsers: 'eligibleUsers',
+        wager_lossRate: 'lossRate',
+        wager_refundCashConversionRate: 'refundCashConversionRate',
+      };
+
+      Object.entries(inputs).forEach(([id, key]) => {
+        const source = id.startsWith('free_') ? free : wager;
+        document.getElementById(id).value = source[key] ?? 0;
+      });
+
+      function recalc() {
+        Object.entries(inputs).forEach(([id, key]) => {
+          const source = id.startsWith('free_') ? free : wager;
+          source[key] = Number(document.getElementById(id).value || 0);
+        });
+
+        const freeRedeemed = Number(free.issuedFreeBets || 0) * pct(free.optInRate) * pct(free.redemptionRate) * (1 - pct(free.expiryRate));
+        const freeCredited = freeRedeemed * pct(free.winRate) * Number(free.freeBetAmount || 0) * oddsToMultiple(free.averageOdds);
+        const weightedConv = pct(free.share10x) * pct(free.conversion10x) + pct(free.share35x) * pct(free.conversion35x);
+        const freeCash = freeCredited * weightedConv * (1 - pct(free.noDepositBlockRate));
+        const freeHold = freeCredited * (pct(free.share10x) * 10 + pct(free.share35x) * 35) * pct(free.holdPercent);
+        const freeNet = freeCash - freeHold;
+
+        const refundCap = Math.max(500, Number(wager.averageDepositAmount || 0));
+        const refundBase = Math.min(Number(wager.averageFirstWagerAmount || 0), refundCap);
+        const refundIssued = Number(wager.eligibleUsers || 0) * pct(wager.lossRate) * refundBase;
+        const refundCredited = refundIssued * pct(wager.refundRedemptionRate) * pct(wager.refundWinRate) * oddsToMultiple(wager.refundAverageOdds);
+        const wagerCash = refundCredited * pct(wager.refundCashConversionRate);
+        const wagerHold = refundCredited * 5 * pct(wager.holdPercent);
+        const wagerNet = wagerCash - wagerHold;
+
+        const combined = freeNet + wagerNet;
+        document.getElementById('liveSummary').textContent = 'Live Combined Net Risk: ' + money(combined);
+      }
+
+      document.getElementById('recalculateBtn').addEventListener('click', recalc);
+      recalc();
+    </script>
+  </body>
+</html>
