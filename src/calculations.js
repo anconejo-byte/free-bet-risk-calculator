@@ -4,10 +4,11 @@ export const SCENARIOS = {
   WORST: 'Worst Case',
 };
 
-const STRESS_MULTIPLIERS = {
+const DEFAULT_STRESS_MULTIPLIERS = {
   redemption: 1.15,
   winRate: 1.1,
   cashConversion: 1.2,
+  blockRate: 0.85,
 };
 
 export function percentToDecimal(value) {
@@ -45,20 +46,20 @@ function clampPercentFields(inputs, fields) {
   );
 }
 
-export function applyScenarioAdjustments(inputs, scenario, type) {
+export function applyScenarioAdjustments(inputs, scenario, type, stressMultipliers = DEFAULT_STRESS_MULTIPLIERS) {
   const adjusted = { ...inputs };
 
   if (scenario === SCENARIOS.STRESS) {
     if (type === 'freeBet') {
-      adjusted.redemptionRate = clampPercentage(inputs.redemptionRate * STRESS_MULTIPLIERS.redemption);
-      adjusted.winRate = clampPercentage(inputs.winRate * STRESS_MULTIPLIERS.winRate);
-      adjusted.conversion10x = clampPercentage(inputs.conversion10x * STRESS_MULTIPLIERS.cashConversion);
-      adjusted.conversion35x = clampPercentage(inputs.conversion35x * STRESS_MULTIPLIERS.cashConversion);
-      adjusted.noDepositBlockRate = clampPercentage(inputs.noDepositBlockRate * 0.85);
+      adjusted.redemptionRate = clampPercentage(inputs.redemptionRate * stressMultipliers.redemption);
+      adjusted.winRate = clampPercentage(inputs.winRate * stressMultipliers.winRate);
+      adjusted.conversion10x = clampPercentage(inputs.conversion10x * stressMultipliers.cashConversion);
+      adjusted.conversion35x = clampPercentage(inputs.conversion35x * stressMultipliers.cashConversion);
+      adjusted.noDepositBlockRate = clampPercentage(inputs.noDepositBlockRate * stressMultipliers.blockRate);
     } else {
-      adjusted.refundRedemptionRate = clampPercentage(inputs.refundRedemptionRate * STRESS_MULTIPLIERS.redemption);
-      adjusted.refundWinRate = clampPercentage(inputs.refundWinRate * STRESS_MULTIPLIERS.winRate);
-      adjusted.refundCashConversionRate = clampPercentage(inputs.refundCashConversionRate * STRESS_MULTIPLIERS.cashConversion);
+      adjusted.refundRedemptionRate = clampPercentage(inputs.refundRedemptionRate * stressMultipliers.redemption);
+      adjusted.refundWinRate = clampPercentage(inputs.refundWinRate * stressMultipliers.winRate);
+      adjusted.refundCashConversionRate = clampPercentage(inputs.refundCashConversionRate * stressMultipliers.cashConversion);
     }
   }
 
@@ -167,7 +168,8 @@ export function calculateWagerBackRisk(inputs) {
   const refundCashConversionRate = percentToDecimal(inputs.refundCashConversionRate);
   const holdPercent = percentToDecimal(inputs.holdPercent);
 
-  const refundCap = Math.max(500, averageDepositAmount);
+  const refundCapRule = inputs.refundCapRule || 'greater_of';
+  const refundCap = refundCapRule === 'lower_of' ? Math.min(500, averageDepositAmount) : Math.max(500, averageDepositAmount);
   const refundBase = Math.min(averageFirstWagerAmount, refundCap);
   const grossExposure = eligibleUsers * refundBase;
   const refundIssued = eligibleUsers * lossRate * refundBase;
@@ -186,6 +188,7 @@ export function calculateWagerBackRisk(inputs) {
   return {
     grossExposure,
     refundCap,
+    refundCapRule,
     refundBase,
     refundIssued,
     refundProfitMultiple,

@@ -38,6 +38,38 @@ const DEFAULT_WAGER_BACK = {
   refundCashConversionRate: 20,
   holdPercent: 7,
   worstCaseProfitMultiple: 1,
+  refundCapRule: 'greater_of',
+};
+
+const DEFAULT_STRESS_CONTROLS = {
+  redemption: 1.15,
+  winRate: 1.1,
+  cashConversion: 1.2,
+  blockRate: 0.85,
+};
+
+const PRESET_CASES = {
+  expected: {
+    label: 'Expected Preset',
+    scenario: SCENARIOS.EXPECTED,
+    free: DEFAULT_FREE_BET,
+    wager: DEFAULT_WAGER_BACK,
+    stress: DEFAULT_STRESS_CONTROLS,
+  },
+  stress: {
+    label: 'Stress Preset',
+    scenario: SCENARIOS.STRESS,
+    free: DEFAULT_FREE_BET,
+    wager: DEFAULT_WAGER_BACK,
+    stress: DEFAULT_STRESS_CONTROLS,
+  },
+  worst: {
+    label: 'Worst Case Preset',
+    scenario: SCENARIOS.WORST,
+    free: DEFAULT_FREE_BET,
+    wager: DEFAULT_WAGER_BACK,
+    stress: DEFAULT_STRESS_CONTROLS,
+  },
 };
 
 const inputGroups = {
@@ -96,15 +128,16 @@ function App() {
   const [scenario, setScenario] = useState(SCENARIOS.EXPECTED);
   const [freeBetInputs, setFreeBetInputs] = useState(DEFAULT_FREE_BET);
   const [wagerBackInputs, setWagerBackInputs] = useState(DEFAULT_WAGER_BACK);
+  const [stressControls, setStressControls] = useState(DEFAULT_STRESS_CONTROLS);
 
   const adjustedFreeBetInputs = useMemo(
-    () => applyScenarioAdjustments(freeBetInputs, scenario, 'freeBet'),
-    [freeBetInputs, scenario],
+    () => applyScenarioAdjustments(freeBetInputs, scenario, 'freeBet', stressControls),
+    [freeBetInputs, scenario, stressControls],
   );
 
   const adjustedWagerInputs = useMemo(
-    () => applyScenarioAdjustments(wagerBackInputs, scenario, 'wagerBack'),
-    [wagerBackInputs, scenario],
+    () => applyScenarioAdjustments(wagerBackInputs, scenario, 'wagerBack', stressControls),
+    [wagerBackInputs, scenario, stressControls],
   );
 
   const freeResults = useMemo(
@@ -117,12 +150,12 @@ function App() {
   );
 
   const stressFree = useMemo(
-    () => calculateFreeBetRisk(applyScenarioAdjustments(freeBetInputs, SCENARIOS.STRESS, 'freeBet')),
-    [freeBetInputs],
+    () => calculateFreeBetRisk(applyScenarioAdjustments(freeBetInputs, SCENARIOS.STRESS, 'freeBet', stressControls)),
+    [freeBetInputs, stressControls],
   );
   const stressWager = useMemo(
-    () => calculateWagerBackRisk(applyScenarioAdjustments(wagerBackInputs, SCENARIOS.STRESS, 'wagerBack')),
-    [wagerBackInputs],
+    () => calculateWagerBackRisk(applyScenarioAdjustments(wagerBackInputs, SCENARIOS.STRESS, 'wagerBack', stressControls)),
+    [wagerBackInputs, stressControls],
   );
 
   const worstFree = useMemo(
@@ -192,6 +225,20 @@ function App() {
     }
   };
 
+  const handleStressControlChange = (key, value) => {
+    const parsed = value === '' ? '' : Number(value);
+    setStressControls((prev) => ({ ...prev, [key]: parsed > 0 ? parsed : 0 }));
+  };
+
+  const applyPresetCase = (key) => {
+    const preset = PRESET_CASES[key];
+    if (!preset) return;
+    setScenario(preset.scenario);
+    setFreeBetInputs({ ...preset.free });
+    setWagerBackInputs({ ...preset.wager });
+    setStressControls({ ...preset.stress });
+  };
+
   const exportCsv = () => {
     const flatRow = {
       scenario,
@@ -239,6 +286,151 @@ function App() {
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', `promo-risk-${scenario.toLowerCase().replace(' ', '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const reportGeneratedAt = useMemo(() => new Date().toISOString(), [scenario, freeBetInputs, wagerBackInputs]);
+
+  const buildHtmlReport = () => {
+    const rows = [
+      ['Scenario', scenario],
+      ['Combined Net Expected Risk', currencyFormat(combined.netRisk)],
+      ['Combined Worst-Case Liability', currencyFormat(combined.worstCaseLiability)],
+      ['Combined Stress-Case Liability', currencyFormat(combined.stressCaseLiability)],
+      ['Free Bet Net Risk', currencyFormat(freeResults.netRisk)],
+      ['Wager Back Net Risk', currencyFormat(wagerResults.refundNetRisk)],
+      ['Free Bet Share of Total Risk', `${combined.freeBetShare.toFixed(2)}%`],
+      ['Wager Back Share of Total Risk', `${combined.wagerBackShare.toFixed(2)}%`],
+    ];
+
+    const assumptions = [
+      ...Object.entries(adjustedFreeBetInputs).map(([k, v]) => [`Free Bet - ${k}`, v]),
+      ...Object.entries(adjustedWagerInputs).map(([k, v]) => [`Wager Back - ${k}`, v]),
+    ];
+
+    const freeJson = JSON.stringify(adjustedFreeBetInputs);
+    const wagerJson = JSON.stringify(adjustedWagerInputs);
+
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Promo Risk Calculator Report</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }
+      h1, h2 { margin: 0 0 12px; }
+      p { margin: 0 0 10px; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+      th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; font-size: 14px; }
+      .meta { color: #334155; margin-bottom: 18px; }
+      .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 18px; }
+      input, select { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+      button { padding: 8px 12px; border: 1px solid #64748b; border-radius: 6px; background: #fff; cursor: pointer; }
+      .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+    </style>
+  </head>
+  <body>
+    <h1>Promo Risk Calculator Report</h1>
+    <p class="meta">Generated at: ${reportGeneratedAt}</p>
+    <p>This tool is a scenario-based promo risk model. It estimates theoretical promotional liability using adjustable assumptions. It is not actual realized P&amp;L, accounting liability, or a substitute for historical promo performance analysis.</p>
+    <div class="card">
+      <h2>Interactive HTML Editing Layer</h2>
+      <p>Edit the fields below directly in this HTML report and click Recalculate. No coding tools are required.</p>
+      <div class="grid">
+        <label>Free Bet Issued<input id="free_issuedFreeBets" type="number" step="any"></label>
+        <label>Free Bet Amount<input id="free_freeBetAmount" type="number" step="any"></label>
+        <label>Free Bet Win Rate %<input id="free_winRate" type="number" step="any"></label>
+        <label>Wager Eligible Users<input id="wager_eligibleUsers" type="number" step="any"></label>
+        <label>Wager Loss Rate %<input id="wager_lossRate" type="number" step="any"></label>
+        <label>Wager Cash Conversion %<input id="wager_refundCashConversionRate" type="number" step="any"></label>
+      </div>
+      <button id="recalculateBtn">Recalculate</button>
+      <p id="liveSummary" class="meta"></p>
+    </div>
+    <h2>Summary Metrics</h2>
+    <table>
+      <tbody>
+        ${rows.map(([label, value]) => `<tr><td>${label}</td><td>${value}</td></tr>`).join('')}
+      </tbody>
+    </table>
+    <h2>Assumptions</h2>
+    <table>
+      <tbody>
+        ${assumptions.map(([label, value]) => `<tr><td>${label}</td><td>${value}</td></tr>`).join('')}
+      </tbody>
+    </table>
+    <h2>Sensitivity (Net Risk)</h2>
+    <table>
+      <thead><tr><th>Metric</th><th>-10%</th><th>Base</th><th>+10%</th></tr></thead>
+      <tbody>
+        <tr><td>Redemption Rate</td><td>${currencyFormat(sensitivity.redemptionRate[0].netRisk)}</td><td>${currencyFormat(sensitivity.redemptionRate[1].netRisk)}</td><td>${currencyFormat(sensitivity.redemptionRate[2].netRisk)}</td></tr>
+        <tr><td>Win Rate</td><td>${currencyFormat(sensitivity.winRate[0].netRisk)}</td><td>${currencyFormat(sensitivity.winRate[1].netRisk)}</td><td>${currencyFormat(sensitivity.winRate[2].netRisk)}</td></tr>
+        <tr><td>Cash Conversion Rate</td><td>${currencyFormat(sensitivity.cashConversionRate[0].netRisk)}</td><td>${currencyFormat(sensitivity.cashConversionRate[1].netRisk)}</td><td>${currencyFormat(sensitivity.cashConversionRate[2].netRisk)}</td></tr>
+      </tbody>
+    </table>
+    <script>
+      const free = ${freeJson};
+      const wager = ${wagerJson};
+
+      const pct = (v) => Number(v || 0) / 100;
+      const oddsToMultiple = (odds) => Number(odds) > 0 ? Number(odds) / 100 : 100 / Math.abs(Number(odds || -110));
+      const money = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v || 0);
+
+      const inputs = {
+        free_issuedFreeBets: 'issuedFreeBets',
+        free_freeBetAmount: 'freeBetAmount',
+        free_winRate: 'winRate',
+        wager_eligibleUsers: 'eligibleUsers',
+        wager_lossRate: 'lossRate',
+        wager_refundCashConversionRate: 'refundCashConversionRate',
+      };
+
+      Object.entries(inputs).forEach(([id, key]) => {
+        const source = id.startsWith('free_') ? free : wager;
+        document.getElementById(id).value = source[key] ?? 0;
+      });
+
+      function recalc() {
+        Object.entries(inputs).forEach(([id, key]) => {
+          const source = id.startsWith('free_') ? free : wager;
+          source[key] = Number(document.getElementById(id).value || 0);
+        });
+
+        const freeRedeemed = Number(free.issuedFreeBets || 0) * pct(free.optInRate) * pct(free.redemptionRate) * (1 - pct(free.expiryRate));
+        const freeCredited = freeRedeemed * pct(free.winRate) * Number(free.freeBetAmount || 0) * oddsToMultiple(free.averageOdds);
+        const weightedConv = pct(free.share10x) * pct(free.conversion10x) + pct(free.share35x) * pct(free.conversion35x);
+        const freeCash = freeCredited * weightedConv * (1 - pct(free.noDepositBlockRate));
+        const freeHold = freeCredited * (pct(free.share10x) * 10 + pct(free.share35x) * 35) * pct(free.holdPercent);
+        const freeNet = freeCash - freeHold;
+
+        const refundCap = Math.max(500, Number(wager.averageDepositAmount || 0));
+        const refundBase = Math.min(Number(wager.averageFirstWagerAmount || 0), refundCap);
+        const refundIssued = Number(wager.eligibleUsers || 0) * pct(wager.lossRate) * refundBase;
+        const refundCredited = refundIssued * pct(wager.refundRedemptionRate) * pct(wager.refundWinRate) * oddsToMultiple(wager.refundAverageOdds);
+        const wagerCash = refundCredited * pct(wager.refundCashConversionRate);
+        const wagerHold = refundCredited * 5 * pct(wager.holdPercent);
+        const wagerNet = wagerCash - wagerHold;
+
+        const combined = freeNet + wagerNet;
+        document.getElementById('liveSummary').textContent = 'Live Combined Net Risk: ' + money(combined);
+      }
+
+      document.getElementById('recalculateBtn').addEventListener('click', recalc);
+      recalc();
+    </script>
+  </body>
+</html>`;
+  };
+
+  const exportHtmlReport = () => {
+    const html = buildHtmlReport();
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `promo-risk-report-${scenario.toLowerCase().replace(' ', '-')}.html`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -315,6 +507,11 @@ function App() {
             </button>
           ))}
         </div>
+        <div className="scenario-buttons" style={{ marginTop: '10px' }}>
+          <button onClick={() => applyPresetCase('expected')}>Load Expected Preset</button>
+          <button onClick={() => applyPresetCase('stress')}>Load Stress Preset</button>
+          <button onClick={() => applyPresetCase('worst')}>Load Worst Case Preset</button>
+        </div>
       </section>
 
       {validationErrors.length > 0 && (
@@ -336,6 +533,39 @@ function App() {
       <section className="card">
         <h2>Wager Back Inputs</h2>
         {renderInputSection('wager')}
+        <label className="input-label" style={{ marginTop: '10px', maxWidth: '360px' }}>
+          <span>Refund cap rule</span>
+          <select
+            value={wagerBackInputs.refundCapRule}
+            onChange={(e) => setWagerBackInputs((prev) => ({ ...prev, refundCapRule: e.target.value }))}
+          >
+            <option value="greater_of">Greater of $500 or deposit amount</option>
+            <option value="lower_of">Lower of $500 or deposit amount</option>
+          </select>
+        </label>
+      </section>
+
+      <section className="card">
+        <h2>Editable Stress Assumption Layer</h2>
+        <p className="note">Adjust stress multipliers directly so users can input every required risk assumption for stress-case modeling.</p>
+        <div className="input-grid">
+          <label className="input-label">
+            <span>Redemption multiplier</span>
+            <input type="number" step="0.01" value={stressControls.redemption} onChange={(e) => handleStressControlChange('redemption', e.target.value)} />
+          </label>
+          <label className="input-label">
+            <span>Win-rate multiplier</span>
+            <input type="number" step="0.01" value={stressControls.winRate} onChange={(e) => handleStressControlChange('winRate', e.target.value)} />
+          </label>
+          <label className="input-label">
+            <span>Cash-conversion multiplier</span>
+            <input type="number" step="0.01" value={stressControls.cashConversion} onChange={(e) => handleStressControlChange('cashConversion', e.target.value)} />
+          </label>
+          <label className="input-label">
+            <span>Block-rate multiplier</span>
+            <input type="number" step="0.01" value={stressControls.blockRate} onChange={(e) => handleStressControlChange('blockRate', e.target.value)} />
+          </label>
+        </div>
       </section>
 
       <section className="card">
@@ -422,6 +652,32 @@ function App() {
               </table>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="card" id="html-reporting-layer">
+        <h2>HTML Reporting Layer</h2>
+        <p>
+          This reporting layer renders a finance-ready summary directly in HTML and can be exported as a standalone report file for audit/compliance sharing.
+        </p>
+        <div className="results-grid">
+          <div>
+            <h3>Current Report Snapshot</h3>
+            <table>
+              <tbody>
+                <tr><td>Scenario</td><td>{scenario}</td></tr>
+                <tr><td>Generated At (UTC)</td><td>{reportGeneratedAt}</td></tr>
+                <tr><td>Combined Net Expected Risk</td><td>{currencyFormat(combined.netRisk)}</td></tr>
+                <tr><td>Combined Worst-Case Liability</td><td>{currencyFormat(combined.worstCaseLiability)}</td></tr>
+                <tr><td>Combined Stress-Case Liability</td><td>{currencyFormat(combined.stressCaseLiability)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <h3>Report Controls</h3>
+            <p className="note">Use this to export an HTML document containing summary metrics, assumptions, and sensitivity outputs.</p>
+            <button onClick={exportHtmlReport}>Export HTML Report</button>
+          </div>
         </div>
       </section>
 
