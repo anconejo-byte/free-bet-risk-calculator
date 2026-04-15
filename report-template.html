@@ -226,6 +226,83 @@
         container.innerHTML = fields.map(([k,l]) => `<label>${l}<input type="number" step="any" data-target="${source}" data-key="${k}" value="${model[source][k]}"></label>`).join('');
       }
 
+      function computeStressLiabilityFromBaseInputs() {
+        const stressFree = {
+          ...model.free,
+          redemptionRate: clampPct(model.free.redemptionRate * model.stress.redemption),
+          winRate: clampPct(model.free.winRate * model.stress.winRate),
+          conversion10x: clampPct(model.free.conversion10x * model.stress.cashConversion),
+          conversion35x: clampPct(model.free.conversion35x * model.stress.cashConversion),
+          noDepositBlockRate: clampPct(model.free.noDepositBlockRate * model.stress.blockRate),
+        };
+        const stressWager = {
+          ...model.wager,
+          refundRedemptionRate: clampPct(model.wager.refundRedemptionRate * model.stress.redemption),
+          refundWinRate: clampPct(model.wager.refundWinRate * model.stress.winRate),
+          refundCashConversionRate: clampPct(model.wager.refundCashConversionRate * model.stress.cashConversion),
+        };
+        return calcFree(stressFree).netRisk + calcWager(stressWager).netRisk;
+      }
+
+      function buildPreset(presetKey) {
+        if (presetKey === 'expected') {
+          return {
+            scenario: 'Expected',
+            free: { ...defaults.free },
+            wager: { ...defaults.wager },
+            stress: { ...defaults.stress },
+          };
+        }
+        if (presetKey === 'stress') {
+          return {
+            scenario: 'Stress',
+            free: {
+              ...defaults.free,
+              redemptionRate: 92,
+              winRate: 52,
+              conversion10x: 38,
+              conversion35x: 22,
+              noDepositBlockRate: 15,
+            },
+            wager: {
+              ...defaults.wager,
+              refundRedemptionRate: 88,
+              refundWinRate: 52,
+              refundCashConversionRate: 30,
+            },
+            stress: {
+              redemption: 1.2,
+              winRate: 1.15,
+              cashConversion: 1.25,
+              blockRate: 0.8,
+            },
+          };
+        }
+        return {
+          scenario: 'Worst Case',
+          free: {
+            ...defaults.free,
+            optInRate: 100,
+            redemptionRate: 100,
+            expiryRate: 0,
+            winRate: 100,
+            conversion10x: 100,
+            conversion35x: 100,
+            noDepositBlockRate: 0,
+            maxProfitMultiple: 1.5,
+          },
+          wager: {
+            ...defaults.wager,
+            lossRate: 100,
+            refundRedemptionRate: 100,
+            refundWinRate: 100,
+            refundCashConversionRate: 100,
+            worstCaseProfitMultiple: 1.4,
+          },
+          stress: { ...defaults.stress },
+        };
+      }
+
       function recalcAndRender() {
         const adjusted = adjustedInputs();
         const free = calcFree(adjusted.free);
@@ -233,7 +310,7 @@
         const combined = {
           net: free.netRisk + wager.netRisk,
           worst: free.worstCase + wager.worstCase,
-          stress: model.scenario === 'Stress' ? free.netRisk + wager.netRisk : (()=>{ const s=adjustedInputs(); return calcFree({ ...model.free, redemptionRate:clampPct(model.free.redemptionRate*model.stress.redemption), winRate:clampPct(model.free.winRate*model.stress.winRate), conversion10x:clampPct(model.free.conversion10x*model.stress.cashConversion), conversion35x:clampPct(model.free.conversion35x*model.stress.cashConversion), noDepositBlockRate:clampPct(model.free.noDepositBlockRate*model.stress.blockRate)}).netRisk + calcWager({ ...model.wager, refundRedemptionRate:clampPct(model.wager.refundRedemptionRate*model.stress.redemption), refundWinRate:clampPct(model.wager.refundWinRate*model.stress.winRate), refundCashConversionRate:clampPct(model.wager.refundCashConversionRate*model.stress.cashConversion)}).netRisk; })()
+          stress: computeStressLiabilityFromBaseInputs()
         };
 
         document.getElementById('topSummary').innerHTML = `
@@ -303,11 +380,11 @@
 
         document.querySelectorAll('[data-preset]').forEach((btn) => {
           btn.addEventListener('click', () => {
-            const p = btn.dataset.preset;
-            model.free = { ...defaults.free };
-            model.wager = { ...defaults.wager };
-            model.stress = { ...defaults.stress };
-            model.scenario = p === 'expected' ? 'Expected' : p === 'stress' ? 'Stress' : 'Worst Case';
+            const next = buildPreset(btn.dataset.preset);
+            model.free = next.free;
+            model.wager = next.wager;
+            model.stress = next.stress;
+            model.scenario = next.scenario;
             document.getElementById('scenario').value = model.scenario;
             renderInputs('freeInputs', freeFields, 'free');
             renderInputs('wagerInputs', wagerFields, 'wager');
