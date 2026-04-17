@@ -43,6 +43,8 @@
           <button data-preset="stress">Load Stress Preset</button>
           <button data-preset="worst">Load Worst Case Preset</button>
           <button id="calculateBtn">Recalculate</button>
+          <button id="saveBtn">Save Changes</button>
+          <button id="loadBtn">Load Saved</button>
           <button id="exportCsvBtn">Export CSV</button>
         </div>
       </section>
@@ -140,6 +142,52 @@
         ['worstCaseProfitMultiple','Worst-case profit multiple']
       ];
       const stressFields = [['redemption','Redemption multiplier'],['winRate','Win-rate multiplier'],['cashConversion','Cash-conversion multiplier'],['blockRate','Block-rate multiplier']];
+      const fieldDescriptions = {
+        issuedFreeBets: 'Total number of free bets issued in this scenario.',
+        freeBetAmount: 'Face value per free bet.',
+        optInRate: 'Percent of users who opt into the offer.',
+        redemptionRate: 'Percent of opted-in users who redeem.',
+        expiryRate: 'Percent of free bets that expire or are not used.',
+        winRate: 'Percent of redeemed bets that win.',
+        averageOdds: 'Average American odds used to estimate credited profit.',
+        share10x: 'Share of users in 10x rollover profile.',
+        share35x: 'Share of users in 35x rollover profile.',
+        conversion10x: 'Cash conversion rate for 10x users.',
+        conversion35x: 'Cash conversion rate for 35x users.',
+        noDepositBlockRate: 'Estimated conversion reduction due to no-deposit restrictions/friction.',
+        holdPercent: 'Expected sportsbook hold on rollover handle.',
+        maxProfitMultiple: 'Worst-case profit multiple for free-bet ceiling modeling.',
+        eligibleUsers: 'Users eligible for wager-back refund promotion.',
+        averageFirstWagerAmount: 'Average first wager amount used for refund base.',
+        averageDepositAmount: 'Average deposit amount for refund cap rule.',
+        lossRate: 'Percent of first wagers that lose and trigger refunds.',
+        refundRedemptionRate: 'Percent of refund free-play that gets redeemed.',
+        refundWinRate: 'Percent of redeemed refund free-play wagers that win.',
+        refundAverageOdds: 'Average odds for refunded free-play bets.',
+        refundCashConversionRate: 'Percent of refund winnings converting into withdrawable cash.',
+        worstCaseProfitMultiple: 'Worst-case profit multiple for refund ceiling.',
+        redemption: 'Stress multiplier for redemption assumptions.',
+        cashConversion: 'Stress multiplier for cash conversion assumptions.',
+        blockRate: 'Stress multiplier for no-deposit block/friction assumptions.',
+      };
+      const resultDescriptions = {
+        'Gross Exposure': 'Total face-value promotional amount exposed.',
+        'Expected Redeemed Value': 'Expected promo value actually redeemed under assumptions.',
+        'Expected Credited Winnings': 'Expected winnings credited from promo outcomes.',
+        'Expected Cash Liability': 'Expected credited value converting into withdrawable cash.',
+        'Expected Hold Recapture': 'Revenue recaptured through hold during rollover.',
+        'Net Expected Risk': 'Cash liability minus hold recapture.',
+        'Worst-Case Liability': 'Ceiling liability based on worst-case assumptions.',
+        'Risk per User': 'Net expected risk divided by eligible volume.',
+        'Risk per 100 Users': 'Net expected risk normalized to 100 users.',
+      };
+      const summaryDescriptions = {
+        combinedNet: 'Combined net expected risk across Free Bet and Wager Back.',
+        combinedWorst: 'Combined worst-case liability ceiling across both promos.',
+        combinedStress: 'Combined stress-case liability using stress multipliers.',
+        combinedRevenue: 'Expected total modeled revenue recapture from hold.',
+      };
+      const STORAGE_KEY = 'promo_risk_calculator_state_v1';
 
       const pct = (v) => Number(v || 0) / 100;
       const clampPct = (v) => Math.max(0, Math.min(100, Number(v || 0)));
@@ -231,7 +279,24 @@
 
       function renderInputs(targetId, fields, source) {
         const container = document.getElementById(targetId);
-        container.innerHTML = fields.map(([k,l]) => `<label>${l}<input type="number" step="any" data-target="${source}" data-key="${k}" value="${model[source][k]}"></label>`).join('');
+        container.innerHTML = fields.map(([k,l]) => `<label title="${fieldDescriptions[k] || l}">${l}<input type="number" step="any" data-target="${source}" data-key="${k}" value="${model[source][k]}" title="${fieldDescriptions[k] || l}"></label>`).join('');
+      }
+
+      function saveState() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(model));
+      }
+
+      function loadState() {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        try {
+          const parsed = JSON.parse(raw);
+          if (!parsed?.free || !parsed?.wager || !parsed?.stress || !parsed?.scenario) return false;
+          model = parsed;
+          return true;
+        } catch {
+          return false;
+        }
       }
 
       function computeStressLiabilityFromBaseInputs() {
@@ -323,16 +388,16 @@
         };
 
         document.getElementById('topSummary').innerHTML = `
-          <div><h3>Combined Net Expected Risk</h3><p>${money(combined.net)}</p></div>
-          <div><h3>Combined Worst-Case Liability</h3><p>${money(combined.worst)}</p></div>
-          <div><h3>Combined Stress-Case Liability</h3><p>${money(combined.stress)}</p></div>
-          <div><h3>Expected Total Revenue Obtained</h3><p>${money(combined.expectedRevenueObtained)}</p></div>`;
+          <div><h3 title="${summaryDescriptions.combinedNet}">Combined Net Expected Risk</h3><p title="${summaryDescriptions.combinedNet}">${money(combined.net)}</p></div>
+          <div><h3 title="${summaryDescriptions.combinedWorst}">Combined Worst-Case Liability</h3><p title="${summaryDescriptions.combinedWorst}">${money(combined.worst)}</p></div>
+          <div><h3 title="${summaryDescriptions.combinedStress}">Combined Stress-Case Liability</h3><p title="${summaryDescriptions.combinedStress}">${money(combined.stress)}</p></div>
+          <div><h3 title="${summaryDescriptions.combinedRevenue}">Expected Total Revenue Obtained</h3><p title="${summaryDescriptions.combinedRevenue}">${money(combined.expectedRevenueObtained)}</p></div>`;
 
         const rows = (obj) => [
           ['Gross Exposure',obj.grossExposure],['Expected Redeemed Value',obj.expectedRedeemedValue],['Expected Credited Winnings',obj.creditedWinnings],
           ['Expected Cash Liability',obj.cashLiability],['Expected Hold Recapture',obj.holdRecapture],['Net Expected Risk',obj.netRisk],
           ['Worst-Case Liability',obj.worstCase],['Risk per User',obj.riskPerUser],['Risk per 100 Users',obj.riskPer100],
-        ].map(([k,v])=>`<tr><td>${k}</td><td>${money(v)}</td></tr>`).join('');
+        ].map(([k,v])=>`<tr><td title="${resultDescriptions[k] || k}">${k}</td><td title="${resultDescriptions[k] || k}">${money(v)}</td></tr>`).join('');
 
         document.getElementById('freeResults').innerHTML = rows(free);
         document.getElementById('wagerResults').innerHTML = rows(wager);
@@ -379,6 +444,7 @@
           <tr><td>Cash Conversion Rate</td><td>${money(sens.conversion[0])}</td><td>${money(sens.conversion[1])}</td><td>${money(sens.conversion[2])}</td></tr>`;
 
         document.getElementById('errors').innerHTML = validations().map(x=>`<li>${x}</li>`).join('');
+        saveState();
       }
 
       function exportCsv() {
@@ -423,6 +489,16 @@
         document.getElementById('scenario').addEventListener('change', (e) => { model.scenario = e.target.value; recalcAndRender(); });
         document.getElementById('calculateBtn').addEventListener('click', recalcAndRender);
         document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
+        document.getElementById('saveBtn').addEventListener('click', saveState);
+        document.getElementById('loadBtn').addEventListener('click', () => {
+          if (loadState()) {
+            document.getElementById('scenario').value = model.scenario;
+            renderInputs('freeInputs', freeFields, 'free');
+            renderInputs('wagerInputs', wagerFields, 'wager');
+            renderInputs('stressControls', stressFields, 'stress');
+            recalcAndRender();
+          }
+        });
 
         document.querySelectorAll('[data-preset]').forEach((btn) => {
           btn.addEventListener('click', () => {
@@ -439,6 +515,12 @@
           });
         });
 
+        if (loadState()) {
+          document.getElementById('scenario').value = model.scenario;
+          renderInputs('freeInputs', freeFields, 'free');
+          renderInputs('wagerInputs', wagerFields, 'wager');
+          renderInputs('stressControls', stressFields, 'stress');
+        }
         recalcAndRender();
       }
 
