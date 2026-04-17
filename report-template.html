@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Promo Risk Calculator (Standalone)</title>
+    <style>
+      body { font-family: Arial, sans-serif; background:#f8fafc; color:#0f172a; margin:0; }
+      .container { max-width: 1240px; margin:0 auto; padding:20px; }
+      .card { background:#fff; border:1px solid #dbe2ea; border-radius:8px; padding:16px; margin-bottom:16px; }
+      .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); }
+      .summary { display:grid; gap:12px; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); }
+      label { display:flex; flex-direction:column; gap:6px; font-size:14px; }
+      input, select, button { padding:8px; border:1px solid #cbd5e1; border-radius:6px; }
+      button { cursor:pointer; background:#fff; }
+      .row { display:flex; gap:8px; flex-wrap:wrap; }
+      table { width:100%; border-collapse: collapse; font-size:14px; }
+      th, td { border-bottom:1px solid #e2e8f0; padding:8px; text-align:left; }
+      .note { color:#334155; font-size:13px; }
+      .error { color:#b91c1c; }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <header class="card">
+        <h1>Promo Risk Calculator — Standalone HTML</h1>
+        <p class="note">This standalone HTML file is the main calculator. Edit assumptions directly here, load presets, and export CSV without coding tools.</p>
+      </header>
+
+      <section class="card">
+        <h2>Scenario & Presets</h2>
+        <div class="row">
+          <label>Scenario
+            <select id="scenario">
+              <option>Expected</option>
+              <option>Stress</option>
+              <option>Worst Case</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <button data-preset="expected">Load Expected Preset</button>
+          <button data-preset="stress">Load Stress Preset</button>
+          <button data-preset="worst">Load Worst Case Preset</button>
+          <button id="calculateBtn">Recalculate</button>
+          <button id="saveBtn">Save Changes</button>
+          <button id="loadBtn">Load Saved</button>
+          <button id="exportCsvBtn">Export CSV</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Editable Stress Controls</h2>
+        <div class="grid" id="stressControls"></div>
+      </section>
+
+      <section class="card">
+        <h2>Free Bet Inputs</h2>
+        <div class="grid" id="freeInputs"></div>
+      </section>
+
+      <section class="card">
+        <h2>Wager Back Inputs</h2>
+        <div class="grid" id="wagerInputs"></div>
+      </section>
+
+      <section class="card">
+        <h2>Top Summary</h2>
+        <div class="summary" id="topSummary"></div>
+      </section>
+
+      <section class="card">
+        <h2>Results</h2>
+        <div class="summary">
+          <div>
+            <h3>Free Bet</h3>
+            <table><tbody id="freeResults"></tbody></table>
+            <p class="note">Only profit from a winning free bet is credited; stake is not returned.</p>
+            <div id="freeComments" class="note"></div>
+          </div>
+          <div>
+            <h3>Wager Back</h3>
+            <table><tbody id="wagerResults"></tbody></table>
+            <p class="note">Refund is issued as free play and needs rollover before withdrawal.</p>
+            <div id="wagerComments" class="note"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Sensitivity (Net Risk)</h2>
+        <table>
+          <thead><tr><th>Variable</th><th>-10%</th><th>Base</th><th>+10%</th></tr></thead>
+          <tbody id="sensitivityTable"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Validation</h2>
+        <ul id="errors" class="error"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Result Explanation & Improvement Suggestions</h2>
+        <p class="note" id="negativeExplanation"></p>
+        <div id="combinedComments" class="note"></div>
+      </section>
+    </main>
+
+    <script>
+      const defaults = {
+        free: {
+          issuedFreeBets: 1000, freeBetAmount: 25, optInRate: 60, redemptionRate: 85, expiryRate: 10, winRate: 45,
+          averageOdds: -110, share10x: 70, share35x: 30, conversion10x: 30, conversion35x: 15, noDepositBlockRate: 20,
+          holdPercent: 7, maxProfitMultiple: 1,
+        },
+        wager: {
+          eligibleUsers: 1000, averageFirstWagerAmount: 50, averageDepositAmount: 100, lossRate: 52,
+          refundRedemptionRate: 80, refundWinRate: 45, refundAverageOdds: -110, refundCashConversionRate: 20,
+          holdPercent: 7, worstCaseProfitMultiple: 1, refundCapRule: 'greater_of',
+        },
+        stress: { redemption: 1.15, winRate: 1.1, cashConversion: 1.2, blockRate: 0.85 },
+      };
+
+      let model = {
+        scenario: 'Expected',
+        free: { ...defaults.free },
+        wager: { ...defaults.wager },
+        stress: { ...defaults.stress },
+      };
+
+      const freeFields = [
+        ['issuedFreeBets','Number of free bets issued'],['freeBetAmount','Free bet amount'],['optInRate','Opt-in rate %'],
+        ['redemptionRate','Redemption rate %'],['expiryRate','Expiry rate %'],['winRate','Win rate %'],['averageOdds','Average American odds'],
+        ['share10x','Share 10x %'],['share35x','Share 35x %'],['conversion10x','Conversion 10x %'],['conversion35x','Conversion 35x %'],
+        ['noDepositBlockRate','No-deposit block rate %'],['holdPercent','Hold %'],['maxProfitMultiple','Max profit multiple']
+      ];
+      const wagerFields = [
+        ['eligibleUsers','Eligible users'],['averageFirstWagerAmount','Avg first wager'],['averageDepositAmount','Avg deposit'],
+        ['lossRate','Loss rate %'],['refundRedemptionRate','Refund redemption %'],['refundWinRate','Refund win rate %'],
+        ['refundAverageOdds','Refund average odds'],['refundCashConversionRate','Refund cash conversion %'],['holdPercent','Hold %'],
+        ['worstCaseProfitMultiple','Worst-case profit multiple']
+      ];
+      const stressFields = [['redemption','Redemption multiplier'],['winRate','Win-rate multiplier'],['cashConversion','Cash-conversion multiplier'],['blockRate','Block-rate multiplier']];
+      const fieldDescriptions = {
+        issuedFreeBets: 'Total number of free bets issued in this scenario.',
+        freeBetAmount: 'Face value per free bet.',
+        optInRate: 'Percent of users who opt into the offer.',
+        redemptionRate: 'Percent of opted-in users who redeem.',
+        expiryRate: 'Percent of free bets that expire or are not used.',
+        winRate: 'Percent of redeemed bets that win.',
+        averageOdds: 'Average American odds used to estimate credited profit.',
+        share10x: 'Share of users in 10x rollover profile.',
+        share35x: 'Share of users in 35x rollover profile.',
+        conversion10x: 'Cash conversion rate for 10x users.',
+        conversion35x: 'Cash conversion rate for 35x users.',
+        noDepositBlockRate: 'Estimated conversion reduction due to no-deposit restrictions/friction.',
+        holdPercent: 'Expected sportsbook hold on rollover handle.',
+        maxProfitMultiple: 'Worst-case profit multiple for free-bet ceiling modeling.',
+        eligibleUsers: 'Users eligible for wager-back refund promotion.',
+        averageFirstWagerAmount: 'Average first wager amount used for refund base.',
+        averageDepositAmount: 'Average deposit amount for refund cap rule.',
+        lossRate: 'Percent of first wagers that lose and trigger refunds.',
+        refundRedemptionRate: 'Percent of refund free-play that gets redeemed.',
+        refundWinRate: 'Percent of redeemed refund free-play wagers that win.',
+        refundAverageOdds: 'Average odds for refunded free-play bets.',
+        refundCashConversionRate: 'Percent of refund winnings converting into withdrawable cash.',
+        worstCaseProfitMultiple: 'Worst-case profit multiple for refund ceiling.',
+        redemption: 'Stress multiplier for redemption assumptions.',
+        cashConversion: 'Stress multiplier for cash conversion assumptions.',
+        blockRate: 'Stress multiplier for no-deposit block/friction assumptions.',
+      };
+      const resultDescriptions = {
+        'Gross Exposure': 'Total face-value promotional amount exposed.',
+        'Expected Redeemed Value': 'Expected promo value actually redeemed under assumptions.',
+        'Expected Credited Winnings': 'Expected winnings credited from promo outcomes.',
+        'Expected Cash Liability': 'Expected credited value converting into withdrawable cash.',
+        'Expected Hold Recapture': 'Revenue recaptured through hold during rollover.',
+        'Net Expected Risk': 'Cash liability minus hold recapture.',
+        'Worst-Case Liability': 'Ceiling liability based on worst-case assumptions.',
+        'Risk per User': 'Net expected risk divided by eligible volume.',
+        'Risk per 100 Users': 'Net expected risk normalized to 100 users.',
+      };
+      const summaryDescriptions = {
+        combinedNet: 'Combined net expected risk across Free Bet and Wager Back.',
+        combinedWorst: 'Combined worst-case liability ceiling across both promos.',
+        combinedStress: 'Combined stress-case liability using stress multipliers.',
+        combinedRevenue: 'Expected total modeled revenue recapture from hold.',
+      };
+      const STORAGE_KEY = 'promo_risk_calculator_state_v1';
+
+      const pct = (v) => Number(v || 0) / 100;
+      const clampPct = (v) => Math.max(0, Math.min(100, Number(v || 0)));
+      const oddsMult = (odds) => Number(odds) > 0 ? Number(odds) / 100 : 100 / Math.abs(Number(odds || -110));
+      const money = (v) => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(v || 0));
+
+      function adjustedInputs() {
+        const free = { ...model.free };
+        const wager = { ...model.wager };
+        if (model.scenario === 'Stress') {
+          free.redemptionRate = clampPct(free.redemptionRate * model.stress.redemption);
+          free.winRate = clampPct(free.winRate * model.stress.winRate);
+          free.conversion10x = clampPct(free.conversion10x * model.stress.cashConversion);
+          free.conversion35x = clampPct(free.conversion35x * model.stress.cashConversion);
+          free.noDepositBlockRate = clampPct(free.noDepositBlockRate * model.stress.blockRate);
+          wager.refundRedemptionRate = clampPct(wager.refundRedemptionRate * model.stress.redemption);
+          wager.refundWinRate = clampPct(wager.refundWinRate * model.stress.winRate);
+          wager.refundCashConversionRate = clampPct(wager.refundCashConversionRate * model.stress.cashConversion);
+        }
+        if (model.scenario === 'Worst Case') {
+          Object.assign(free, { optInRate:100, redemptionRate:100, expiryRate:0, winRate:100, conversion10x:100, conversion35x:100, noDepositBlockRate:0 });
+          Object.assign(wager, { lossRate:100, refundRedemptionRate:100, refundWinRate:100, refundCashConversionRate:100 });
+        }
+        return { free, wager };
+      }
+
+      function calcFree(i) {
+        const redeemed = i.issuedFreeBets * pct(i.optInRate) * pct(i.redemptionRate) * (1 - pct(i.expiryRate));
+        const credited = redeemed * pct(i.winRate) * i.freeBetAmount * oddsMult(i.averageOdds);
+        const weightedConv = pct(i.share10x) * pct(i.conversion10x) + pct(i.share35x) * pct(i.conversion35x);
+        const cash = credited * weightedConv * (1 - pct(i.noDepositBlockRate));
+        const hold = credited * (pct(i.share10x) * 10 + pct(i.share35x) * 35) * pct(i.holdPercent);
+        const net = cash - hold;
+        return {
+          grossExposure: i.issuedFreeBets * i.freeBetAmount,
+          expectedRedeemedValue: redeemed * i.freeBetAmount,
+          creditedWinnings: credited,
+          cashLiability: cash,
+          holdRecapture: hold,
+          netRisk: net,
+          worstCase: i.issuedFreeBets * i.freeBetAmount * Number(i.maxProfitMultiple || 1),
+          riskPerUser: i.issuedFreeBets ? net / i.issuedFreeBets : 0,
+          riskPer100: i.issuedFreeBets ? (net / i.issuedFreeBets) * 100 : 0,
+        };
+      }
+
+      function calcWager(i) {
+        const refundCap = i.refundCapRule === 'lower_of' ? Math.min(500, i.averageDepositAmount) : Math.max(500, i.averageDepositAmount);
+        const base = Math.min(i.averageFirstWagerAmount, refundCap);
+        const issued = i.eligibleUsers * pct(i.lossRate) * base;
+        const credited = issued * pct(i.refundRedemptionRate) * pct(i.refundWinRate) * oddsMult(i.refundAverageOdds);
+        const cash = credited * pct(i.refundCashConversionRate);
+        const hold = credited * 5 * pct(i.holdPercent);
+        const net = cash - hold;
+        return {
+          grossExposure: i.eligibleUsers * base,
+          expectedRedeemedValue: issued * pct(i.refundRedemptionRate),
+          creditedWinnings: credited,
+          cashLiability: cash,
+          holdRecapture: hold,
+          netRisk: net,
+          worstCase: i.eligibleUsers * base * Number(i.worstCaseProfitMultiple || 1),
+          riskPerUser: i.eligibleUsers ? net / i.eligibleUsers : 0,
+          riskPer100: i.eligibleUsers ? (net / i.eligibleUsers) * 100 : 0,
+        };
+      }
+
+      function calcSensitivity(free, wager) {
+        const deltas = [0.9,1,1.1];
+        const run = (freeMut, wagerMut) => deltas.map(d => {
+          const f = { ...free, ...freeMut(d) };
+          const w = { ...wager, ...wagerMut(d) };
+          return calcFree(f).netRisk + calcWager(w).netRisk;
+        });
+        return {
+          redemption: run((d)=>({redemptionRate: clampPct(free.redemptionRate*d)}), ()=>({})),
+          win: run((d)=>({winRate: clampPct(free.winRate*d)}), (d)=>({refundWinRate: clampPct(wager.refundWinRate*d)})),
+          conversion: run((d)=>({conversion10x: clampPct(free.conversion10x*d), conversion35x: clampPct(free.conversion35x*d)}), (d)=>({refundCashConversionRate: clampPct(wager.refundCashConversionRate*d)})),
+        };
+      }
+
+      function validations() {
+        const e = [];
+        if (Math.abs(Number(model.free.share10x) + Number(model.free.share35x) - 100) > 0.001) e.push('Share10x + Share35x must equal 100%.');
+        if (Number(model.free.averageOdds) === 0 || Number(model.wager.refundAverageOdds) === 0) e.push('Odds cannot be zero.');
+        Object.entries({...model.free, ...model.wager}).forEach(([k,v])=>{ if (typeof v === 'number' && v < 0) e.push(`${k} cannot be negative.`); });
+        return e;
+      }
+
+      function renderInputs(targetId, fields, source) {
+        const container = document.getElementById(targetId);
+        container.innerHTML = fields.map(([k,l]) => `<label title="${fieldDescriptions[k] || l}">${l}<input type="number" step="any" data-target="${source}" data-key="${k}" value="${model[source][k]}" title="${fieldDescriptions[k] || l}"></label>`).join('');
+      }
+
+      function saveState() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(model));
+      }
+
+      function loadState() {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        try {
+          const parsed = JSON.parse(raw);
+          if (!parsed?.free || !parsed?.wager || !parsed?.stress || !parsed?.scenario) return false;
+          model = parsed;
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      function computeStressLiabilityFromBaseInputs() {
+        const stressFree = {
+          ...model.free,
+          redemptionRate: clampPct(model.free.redemptionRate * model.stress.redemption),
+          winRate: clampPct(model.free.winRate * model.stress.winRate),
+          conversion10x: clampPct(model.free.conversion10x * model.stress.cashConversion),
+          conversion35x: clampPct(model.free.conversion35x * model.stress.cashConversion),
+          noDepositBlockRate: clampPct(model.free.noDepositBlockRate * model.stress.blockRate),
+        };
+        const stressWager = {
+          ...model.wager,
+          refundRedemptionRate: clampPct(model.wager.refundRedemptionRate * model.stress.redemption),
+          refundWinRate: clampPct(model.wager.refundWinRate * model.stress.winRate),
+          refundCashConversionRate: clampPct(model.wager.refundCashConversionRate * model.stress.cashConversion),
+        };
+        return calcFree(stressFree).netRisk + calcWager(stressWager).netRisk;
+      }
+
+      function buildPreset(presetKey) {
+        if (presetKey === 'expected') {
+          return {
+            scenario: 'Expected',
+            free: { ...defaults.free },
+            wager: { ...defaults.wager },
+            stress: { ...defaults.stress },
+          };
+        }
+        if (presetKey === 'stress') {
+          return {
+            scenario: 'Stress',
+            free: {
+              ...defaults.free,
+              redemptionRate: 92,
+              winRate: 52,
+              conversion10x: 38,
+              conversion35x: 22,
+              noDepositBlockRate: 15,
+            },
+            wager: {
+              ...defaults.wager,
+              refundRedemptionRate: 88,
+              refundWinRate: 52,
+              refundCashConversionRate: 30,
+            },
+            stress: {
+              redemption: 1.2,
+              winRate: 1.15,
+              cashConversion: 1.25,
+              blockRate: 0.8,
+            },
+          };
+        }
+        return {
+          scenario: 'Worst Case',
+          free: {
+            ...defaults.free,
+            optInRate: 100,
+            redemptionRate: 100,
+            expiryRate: 0,
+            winRate: 100,
+            conversion10x: 100,
+            conversion35x: 100,
+            noDepositBlockRate: 0,
+            maxProfitMultiple: 1.5,
+          },
+          wager: {
+            ...defaults.wager,
+            lossRate: 100,
+            refundRedemptionRate: 100,
+            refundWinRate: 100,
+            refundCashConversionRate: 100,
+            worstCaseProfitMultiple: 1.4,
+          },
+          stress: { ...defaults.stress },
+        };
+      }
+
+      function recalcAndRender() {
+        const adjusted = adjustedInputs();
+        const free = calcFree(adjusted.free);
+        const wager = calcWager(adjusted.wager);
+        const combined = {
+          net: free.netRisk + wager.netRisk,
+          worst: free.worstCase + wager.worstCase,
+          stress: computeStressLiabilityFromBaseInputs(),
+          expectedRevenueObtained: free.holdRecapture + wager.holdRecapture
+        };
+
+        document.getElementById('topSummary').innerHTML = `
+          <div><h3 title="${summaryDescriptions.combinedNet}">Combined Net Expected Risk</h3><p title="${summaryDescriptions.combinedNet}">${money(combined.net)}</p></div>
+          <div><h3 title="${summaryDescriptions.combinedWorst}">Combined Worst-Case Liability</h3><p title="${summaryDescriptions.combinedWorst}">${money(combined.worst)}</p></div>
+          <div><h3 title="${summaryDescriptions.combinedStress}">Combined Stress-Case Liability</h3><p title="${summaryDescriptions.combinedStress}">${money(combined.stress)}</p></div>
+          <div><h3 title="${summaryDescriptions.combinedRevenue}">Expected Total Revenue Obtained</h3><p title="${summaryDescriptions.combinedRevenue}">${money(combined.expectedRevenueObtained)}</p></div>`;
+
+        const rows = (obj) => [
+          ['Gross Exposure',obj.grossExposure],['Expected Redeemed Value',obj.expectedRedeemedValue],['Expected Credited Winnings',obj.creditedWinnings],
+          ['Expected Cash Liability',obj.cashLiability],['Expected Hold Recapture',obj.holdRecapture],['Net Expected Risk',obj.netRisk],
+          ['Worst-Case Liability',obj.worstCase],['Risk per User',obj.riskPerUser],['Risk per 100 Users',obj.riskPer100],
+        ].map(([k,v])=>`<tr><td title="${resultDescriptions[k] || k}">${k}</td><td title="${resultDescriptions[k] || k}">${money(v)}</td></tr>`).join('');
+
+        document.getElementById('freeResults').innerHTML = rows(free);
+        document.getElementById('wagerResults').innerHTML = rows(wager);
+
+        const toList = (items) => `<ul>${items.map((x) => `<li>${x}</li>`).join('')}</ul>`;
+        const freeComments = [
+          free.netRisk < 0
+            ? 'Free Bet net risk is negative. This means modeled hold recapture is larger than expected cash conversion liability.'
+            : 'Free Bet net risk is positive. Promo cash conversion currently exceeds modeled hold recapture.',
+          free.netRisk < 0
+            ? 'Improvement: reduce free-bet friction assumptions bias by validating real-world conversion and block rates with historical cohorts.'
+            : 'Improvement: lower conversion rates or increase hold via tighter odds/profile mix controls to reduce downside.',
+          'Improvement: test lower win-rate and conversion sensitivity to identify stable downside guardrails.',
+        ];
+        const wagerComments = [
+          wager.netRisk < 0
+            ? 'Wager Back net risk is negative, indicating rollover hold offsets expected cash conversion under current assumptions.'
+            : 'Wager Back net risk is positive, indicating expected refund conversion creates net downside.',
+          wager.netRisk < 0
+            ? 'Improvement: verify refund redemption and win-rate assumptions so net-negative expectations are not overstated.'
+            : 'Improvement: tighten refund-eligible odds, cap exposure, or lower conversion assumptions to reduce risk.',
+          'Improvement: segment by bettor profile and first-wager size to sharpen refund base and loss-rate assumptions.',
+        ];
+        const combinedComments = [
+          combined.net < 0
+            ? 'Combined Net Expected Risk is negative. In model terms, promotional value is expected to be recaptured by hold at current assumptions.'
+            : 'Combined Net Expected Risk is positive. Expected promotional cash conversion exceeds hold recapture.',
+          `Expected Total Revenue Obtained is ${money(combined.expectedRevenueObtained)} and represents modeled hold recapture from rollover activity.`,
+          'If negative values are not desired for reporting, apply a downside floor at zero while keeping raw values for finance review.',
+          `Scenario check: Current scenario is ${model.scenario}. Compare Expected vs Stress vs Worst Case to see where net risk turns positive.`,
+          'Improvement: calibrate assumptions monthly against realized redemption, win rates, and post-rollover withdrawal behavior.',
+        ];
+
+        document.getElementById('freeComments').innerHTML = toList(freeComments);
+        document.getElementById('wagerComments').innerHTML = toList(wagerComments);
+        document.getElementById('combinedComments').innerHTML = toList(combinedComments);
+        document.getElementById('negativeExplanation').textContent =
+          'Why negatives happen: Net Risk = Cash Liability − Hold Recapture. A negative value means hold recapture is larger than cash liability under current assumptions. This is common in scenario models and does not represent realized accounting profit.';
+
+        const sens = calcSensitivity(adjusted.free, adjusted.wager);
+        document.getElementById('sensitivityTable').innerHTML = `
+          <tr><td>Redemption Rate</td><td>${money(sens.redemption[0])}</td><td>${money(sens.redemption[1])}</td><td>${money(sens.redemption[2])}</td></tr>
+          <tr><td>Win Rate</td><td>${money(sens.win[0])}</td><td>${money(sens.win[1])}</td><td>${money(sens.win[2])}</td></tr>
+          <tr><td>Cash Conversion Rate</td><td>${money(sens.conversion[0])}</td><td>${money(sens.conversion[1])}</td><td>${money(sens.conversion[2])}</td></tr>`;
+
+        document.getElementById('errors').innerHTML = validations().map(x=>`<li>${x}</li>`).join('');
+        saveState();
+      }
+
+      function exportCsv() {
+        const adjusted = adjustedInputs();
+        const free = calcFree(adjusted.free);
+        const wager = calcWager(adjusted.wager);
+        const sens = calcSensitivity(adjusted.free, adjusted.wager);
+        const row = {
+          scenario: model.scenario,
+          ...Object.fromEntries(Object.entries(model.free).map(([k,v])=>[`free_${k}`,v])),
+          ...Object.fromEntries(Object.entries(model.wager).map(([k,v])=>[`wager_${k}`,v])),
+          ...Object.fromEntries(Object.entries(model.stress).map(([k,v])=>[`stress_${k}`,v])),
+          free_netRisk: free.netRisk,
+          wager_netRisk: wager.netRisk,
+          combined_netRisk: free.netRisk + wager.netRisk,
+          expected_total_revenue_obtained: free.holdRecapture + wager.holdRecapture,
+          sens_red_minus10: sens.redemption[0], sens_red_base: sens.redemption[1], sens_red_plus10: sens.redemption[2],
+        };
+        const headers = Object.keys(row);
+        const values = headers.map(h => row[h]);
+        const csv = headers.join(',') + '\n' + values.join(',');
+        const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `promo-risk-standalone-${model.scenario.toLowerCase().replace(' ','-')}.csv`;
+        a.click();
+      }
+
+      function bind() {
+        renderInputs('freeInputs', freeFields, 'free');
+        renderInputs('wagerInputs', wagerFields, 'wager');
+        renderInputs('stressControls', stressFields, 'stress');
+
+        document.body.addEventListener('input', (e) => {
+          const t = e.target;
+          if (!t.dataset?.target) return;
+          const target = t.dataset.target;
+          const key = t.dataset.key;
+          model[target][key] = Number(t.value);
+        });
+
+        document.getElementById('scenario').addEventListener('change', (e) => { model.scenario = e.target.value; recalcAndRender(); });
+        document.getElementById('calculateBtn').addEventListener('click', recalcAndRender);
+        document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
+        document.getElementById('saveBtn').addEventListener('click', saveState);
+        document.getElementById('loadBtn').addEventListener('click', () => {
+          if (loadState()) {
+            document.getElementById('scenario').value = model.scenario;
+            renderInputs('freeInputs', freeFields, 'free');
+            renderInputs('wagerInputs', wagerFields, 'wager');
+            renderInputs('stressControls', stressFields, 'stress');
+            recalcAndRender();
+          }
+        });
+
+        document.querySelectorAll('[data-preset]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const next = buildPreset(btn.dataset.preset);
+            model.free = next.free;
+            model.wager = next.wager;
+            model.stress = next.stress;
+            model.scenario = next.scenario;
+            document.getElementById('scenario').value = model.scenario;
+            renderInputs('freeInputs', freeFields, 'free');
+            renderInputs('wagerInputs', wagerFields, 'wager');
+            renderInputs('stressControls', stressFields, 'stress');
+            recalcAndRender();
+          });
+        });
+
+        if (loadState()) {
+          document.getElementById('scenario').value = model.scenario;
+          renderInputs('freeInputs', freeFields, 'free');
+          renderInputs('wagerInputs', wagerFields, 'wager');
+          renderInputs('stressControls', stressFields, 'stress');
+        }
+        recalcAndRender();
+      }
+
+      bind();
+    </script>
+  </body>
+</html>
