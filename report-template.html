@@ -74,11 +74,13 @@
             <h3>Free Bet</h3>
             <table><tbody id="freeResults"></tbody></table>
             <p class="note">Only profit from a winning free bet is credited; stake is not returned.</p>
+            <div id="freeComments" class="note"></div>
           </div>
           <div>
             <h3>Wager Back</h3>
             <table><tbody id="wagerResults"></tbody></table>
             <p class="note">Refund is issued as free play and needs rollover before withdrawal.</p>
+            <div id="wagerComments" class="note"></div>
           </div>
         </div>
       </section>
@@ -94,6 +96,12 @@
       <section class="card">
         <h2>Validation</h2>
         <ul id="errors" class="error"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Result Explanation & Improvement Suggestions</h2>
+        <p class="note" id="negativeExplanation"></p>
+        <div id="combinedComments" class="note"></div>
       </section>
     </main>
 
@@ -326,6 +334,40 @@
 
         document.getElementById('freeResults').innerHTML = rows(free);
         document.getElementById('wagerResults').innerHTML = rows(wager);
+
+        const toList = (items) => `<ul>${items.map((x) => `<li>${x}</li>`).join('')}</ul>`;
+        const freeComments = [
+          free.netRisk < 0
+            ? 'Free Bet net risk is negative. This means modeled hold recapture is larger than expected cash conversion liability.'
+            : 'Free Bet net risk is positive. Promo cash conversion currently exceeds modeled hold recapture.',
+          free.netRisk < 0
+            ? 'Improvement: reduce free-bet friction assumptions bias by validating real-world conversion and block rates with historical cohorts.'
+            : 'Improvement: lower conversion rates or increase hold via tighter odds/profile mix controls to reduce downside.',
+          'Improvement: test lower win-rate and conversion sensitivity to identify stable downside guardrails.',
+        ];
+        const wagerComments = [
+          wager.netRisk < 0
+            ? 'Wager Back net risk is negative, indicating rollover hold offsets expected cash conversion under current assumptions.'
+            : 'Wager Back net risk is positive, indicating expected refund conversion creates net downside.',
+          wager.netRisk < 0
+            ? 'Improvement: verify refund redemption and win-rate assumptions so net-negative expectations are not overstated.'
+            : 'Improvement: tighten refund-eligible odds, cap exposure, or lower conversion assumptions to reduce risk.',
+          'Improvement: segment by bettor profile and first-wager size to sharpen refund base and loss-rate assumptions.',
+        ];
+        const combinedComments = [
+          combined.net < 0
+            ? 'Combined Net Expected Risk is negative. In model terms, promotional value is expected to be recaptured by hold at current assumptions.'
+            : 'Combined Net Expected Risk is positive. Expected promotional cash conversion exceeds hold recapture.',
+          'If negative values are not desired for reporting, apply a downside floor at zero while keeping raw values for finance review.',
+          `Scenario check: Current scenario is ${model.scenario}. Compare Expected vs Stress vs Worst Case to see where net risk turns positive.`,
+          'Improvement: calibrate assumptions monthly against realized redemption, win rates, and post-rollover withdrawal behavior.',
+        ];
+
+        document.getElementById('freeComments').innerHTML = toList(freeComments);
+        document.getElementById('wagerComments').innerHTML = toList(wagerComments);
+        document.getElementById('combinedComments').innerHTML = toList(combinedComments);
+        document.getElementById('negativeExplanation').textContent =
+          'Why negatives happen: Net Risk = Cash Liability − Hold Recapture. A negative value means hold recapture is larger than cash liability under current assumptions. This is common in scenario models and does not represent realized accounting profit.';
 
         const sens = calcSensitivity(adjusted.free, adjusted.wager);
         document.getElementById('sensitivityTable').innerHTML = `
