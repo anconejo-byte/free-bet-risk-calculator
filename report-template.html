@@ -18,6 +18,27 @@
       th, td { border-bottom:1px solid #e2e8f0; padding:8px; text-align:left; }
       .note { color:#334155; font-size:13px; }
       .error { color:#b91c1c; }
+      .tooltip-target {
+        position: relative;
+        cursor: help;
+        border-bottom: 1px dotted #64748b;
+        display: inline-block;
+      }
+      .tooltip-target:hover::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        left: 0;
+        top: calc(100% + 6px);
+        z-index: 1000;
+        width: min(320px, 70vw);
+        background: #0f172a;
+        color: #fff;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        line-height: 1.35;
+        box-shadow: 0 6px 18px rgba(2, 6, 23, 0.35);
+      }
     </style>
   </head>
   <body>
@@ -279,7 +300,7 @@
 
       function renderInputs(targetId, fields, source) {
         const container = document.getElementById(targetId);
-        container.innerHTML = fields.map(([k,l]) => `<label title="${fieldDescriptions[k] || l}">${l}<input type="number" step="any" data-target="${source}" data-key="${k}" value="${model[source][k]}" title="${fieldDescriptions[k] || l}"></label>`).join('');
+        container.innerHTML = fields.map(([k,l]) => `<label><span class="tooltip-target" data-tooltip="${fieldDescriptions[k] || l}" title="${fieldDescriptions[k] || l}">${l}</span><input type="number" step="any" data-target="${source}" data-key="${k}" value="${model[source][k]}" title="${fieldDescriptions[k] || l}"></label>`).join('');
       }
 
       function saveState() {
@@ -388,16 +409,16 @@
         };
 
         document.getElementById('topSummary').innerHTML = `
-          <div><h3 title="${summaryDescriptions.combinedNet}">Combined Net Expected Risk</h3><p title="${summaryDescriptions.combinedNet}">${money(combined.net)}</p></div>
-          <div><h3 title="${summaryDescriptions.combinedWorst}">Combined Worst-Case Liability</h3><p title="${summaryDescriptions.combinedWorst}">${money(combined.worst)}</p></div>
-          <div><h3 title="${summaryDescriptions.combinedStress}">Combined Stress-Case Liability</h3><p title="${summaryDescriptions.combinedStress}">${money(combined.stress)}</p></div>
-          <div><h3 title="${summaryDescriptions.combinedRevenue}">Expected Total Revenue Obtained</h3><p title="${summaryDescriptions.combinedRevenue}">${money(combined.expectedRevenueObtained)}</p></div>`;
+          <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedNet}" title="${summaryDescriptions.combinedNet}">Combined Net Expected Risk</h3><p>${money(combined.net)}</p></div>
+          <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedWorst}" title="${summaryDescriptions.combinedWorst}">Combined Worst-Case Liability</h3><p>${money(combined.worst)}</p></div>
+          <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedStress}" title="${summaryDescriptions.combinedStress}">Combined Stress-Case Liability</h3><p>${money(combined.stress)}</p></div>
+          <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedRevenue}" title="${summaryDescriptions.combinedRevenue}">Expected Total Revenue Obtained</h3><p>${money(combined.expectedRevenueObtained)}</p></div>`;
 
         const rows = (obj) => [
           ['Gross Exposure',obj.grossExposure],['Expected Redeemed Value',obj.expectedRedeemedValue],['Expected Credited Winnings',obj.creditedWinnings],
           ['Expected Cash Liability',obj.cashLiability],['Expected Hold Recapture',obj.holdRecapture],['Net Expected Risk',obj.netRisk],
           ['Worst-Case Liability',obj.worstCase],['Risk per User',obj.riskPerUser],['Risk per 100 Users',obj.riskPer100],
-        ].map(([k,v])=>`<tr><td title="${resultDescriptions[k] || k}">${k}</td><td title="${resultDescriptions[k] || k}">${money(v)}</td></tr>`).join('');
+        ].map(([k,v])=>`<tr><td><span class="tooltip-target" data-tooltip="${resultDescriptions[k] || k}" title="${resultDescriptions[k] || k}">${k}</span></td><td>${money(v)}</td></tr>`).join('');
 
         document.getElementById('freeResults').innerHTML = rows(free);
         document.getElementById('wagerResults').innerHTML = rows(wager);
