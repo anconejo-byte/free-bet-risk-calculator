@@ -318,13 +318,15 @@
         const combined = {
           net: free.netRisk + wager.netRisk,
           worst: free.worstCase + wager.worstCase,
-          stress: computeStressLiabilityFromBaseInputs()
+          stress: computeStressLiabilityFromBaseInputs(),
+          expectedRevenueObtained: free.holdRecapture + wager.holdRecapture
         };
 
         document.getElementById('topSummary').innerHTML = `
           <div><h3>Combined Net Expected Risk</h3><p>${money(combined.net)}</p></div>
           <div><h3>Combined Worst-Case Liability</h3><p>${money(combined.worst)}</p></div>
-          <div><h3>Combined Stress-Case Liability</h3><p>${money(combined.stress)}</p></div>`;
+          <div><h3>Combined Stress-Case Liability</h3><p>${money(combined.stress)}</p></div>
+          <div><h3>Expected Total Revenue Obtained</h3><p>${money(combined.expectedRevenueObtained)}</p></div>`;
 
         const rows = (obj) => [
           ['Gross Exposure',obj.grossExposure],['Expected Redeemed Value',obj.expectedRedeemedValue],['Expected Credited Winnings',obj.creditedWinnings],
@@ -358,6 +360,7 @@
           combined.net < 0
             ? 'Combined Net Expected Risk is negative. In model terms, promotional value is expected to be recaptured by hold at current assumptions.'
             : 'Combined Net Expected Risk is positive. Expected promotional cash conversion exceeds hold recapture.',
+          `Expected Total Revenue Obtained is ${money(combined.expectedRevenueObtained)} and represents modeled hold recapture from rollover activity.`,
           'If negative values are not desired for reporting, apply a downside floor at zero while keeping raw values for finance review.',
           `Scenario check: Current scenario is ${model.scenario}. Compare Expected vs Stress vs Worst Case to see where net risk turns positive.`,
           'Improvement: calibrate assumptions monthly against realized redemption, win rates, and post-rollover withdrawal behavior.',
@@ -391,6 +394,7 @@
           free_netRisk: free.netRisk,
           wager_netRisk: wager.netRisk,
           combined_netRisk: free.netRisk + wager.netRisk,
+          expected_total_revenue_obtained: free.holdRecapture + wager.holdRecapture,
           sens_red_minus10: sens.redemption[0], sens_red_base: sens.redemption[1], sens_red_plus10: sens.redemption[2],
         };
         const headers = Object.keys(row);
