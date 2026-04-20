@@ -91,6 +91,12 @@
       </section>
 
       <section class="card">
+        <h2>Executive Approval View (Plain Language)</h2>
+        <div class="summary" id="executiveSummary"></div>
+        <p class="note">Positive net outcome means modeled loss exposure. Negative net outcome means modeled hold recapture exceeds payout liability.</p>
+      </section>
+
+      <section class="card">
         <h2>Results</h2>
         <div class="summary">
           <div>
@@ -192,18 +198,18 @@
         blockRate: 'Stress multiplier for no-deposit block/friction assumptions.',
       };
       const resultDescriptions = {
-        'Gross Exposure': 'Total face-value promotional amount exposed.',
-        'Expected Redeemed Value': 'Expected promo value actually redeemed under assumptions.',
-        'Expected Credited Winnings': 'Expected winnings credited from promo outcomes.',
-        'Expected Cash Liability': 'Expected credited value converting into withdrawable cash.',
-        'Expected Hold Recapture': 'Revenue recaptured through hold during rollover.',
-        'Net Expected Risk': 'Cash liability minus hold recapture.',
-        'Worst-Case Liability': 'Ceiling liability based on worst-case assumptions.',
-        'Risk per User': 'Net expected risk divided by eligible volume.',
-        'Risk per 100 Users': 'Net expected risk normalized to 100 users.',
+        'Total Promo Budget at Risk': 'Total face-value promotional amount exposed.',
+        'Expected Promo Value Used': 'Expected promo value actually redeemed under assumptions.',
+        'Expected Winnings Credited': 'Expected winnings credited from promo outcomes.',
+        'Expected Cash Payout Liability': 'Expected credited value converting into withdrawable cash.',
+        'Expected Revenue Recaptured from Play': 'Revenue recaptured through hold during rollover.',
+        'Net Outcome (Positive = Loss)': 'Cash liability minus hold recapture.',
+        'Maximum Loss Ceiling (Worst Case)': 'Ceiling liability based on worst-case assumptions.',
+        'Loss per User': 'Net expected risk divided by eligible volume.',
+        'Loss per 100 Users': 'Net expected risk normalized to 100 users.',
       };
       const summaryDescriptions = {
-        combinedNet: 'Combined net expected risk across Free Bet and Wager Back.',
+        combinedNet: 'Combined net outcome across Free Bet and Wager Back. Positive means loss exposure.',
         combinedWorst: 'Combined worst-case liability ceiling across both promos.',
         combinedStress: 'Combined stress-case liability using stress multipliers.',
         combinedRevenue: 'Expected total modeled revenue recapture from hold.',
@@ -407,17 +413,32 @@
           stress: computeStressLiabilityFromBaseInputs(),
           expectedRevenueObtained: free.holdRecapture + wager.holdRecapture
         };
+        const combinedCashLiability = free.cashLiability + wager.cashLiability;
+        const potentialLoss = Math.max(combined.net, 0);
+        const potentialRevenue = combined.expectedRevenueObtained;
+        const estimatedNetBusinessImpact = potentialRevenue - combinedCashLiability;
+        const freeRiskPerIssuedBet = adjusted.free.issuedFreeBets > 0 ? free.netRisk / adjusted.free.issuedFreeBets : 0;
+        const breakEvenIssuedFreeBets =
+          freeRiskPerIssuedBet !== 0
+            ? Math.max(0, Math.round((-wager.netRisk) / freeRiskPerIssuedBet))
+            : null;
 
         document.getElementById('topSummary').innerHTML = `
-          <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedNet}" title="${summaryDescriptions.combinedNet}">Combined Net Expected Risk</h3><p>${money(combined.net)}</p></div>
-          <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedWorst}" title="${summaryDescriptions.combinedWorst}">Combined Worst-Case Liability</h3><p>${money(combined.worst)}</p></div>
-          <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedStress}" title="${summaryDescriptions.combinedStress}">Combined Stress-Case Liability</h3><p>${money(combined.stress)}</p></div>
+          <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedNet}" title="${summaryDescriptions.combinedNet}">Net Outcome (Positive = Loss)</h3><p>${money(combined.net)}</p></div>
+          <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedWorst}" title="${summaryDescriptions.combinedWorst}">Maximum Loss Ceiling (Worst Case)</h3><p>${money(combined.worst)}</p></div>
+          <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedStress}" title="${summaryDescriptions.combinedStress}">Stress Test Loss</h3><p>${money(combined.stress)}</p></div>
           <div><h3 class="tooltip-target" data-tooltip="${summaryDescriptions.combinedRevenue}" title="${summaryDescriptions.combinedRevenue}">Expected Total Revenue Obtained</h3><p>${money(combined.expectedRevenueObtained)}</p></div>`;
 
+        document.getElementById('executiveSummary').innerHTML = `
+          <div><h3>Potential Loss (Downside)</h3><p>${money(potentialLoss)}</p></div>
+          <div><h3>Potential Revenue Recapture</h3><p>${money(potentialRevenue)}</p></div>
+          <div><h3>Estimated Net Business Impact</h3><p>${money(estimatedNetBusinessImpact)}</p></div>
+          <div><h3>Break-even Free Bets Issued</h3><p>${breakEvenIssuedFreeBets === null ? 'N/A' : breakEvenIssuedFreeBets.toLocaleString()}</p></div>`;
+
         const rows = (obj) => [
-          ['Gross Exposure',obj.grossExposure],['Expected Redeemed Value',obj.expectedRedeemedValue],['Expected Credited Winnings',obj.creditedWinnings],
-          ['Expected Cash Liability',obj.cashLiability],['Expected Hold Recapture',obj.holdRecapture],['Net Expected Risk',obj.netRisk],
-          ['Worst-Case Liability',obj.worstCase],['Risk per User',obj.riskPerUser],['Risk per 100 Users',obj.riskPer100],
+          ['Total Promo Budget at Risk',obj.grossExposure],['Expected Promo Value Used',obj.expectedRedeemedValue],['Expected Winnings Credited',obj.creditedWinnings],
+          ['Expected Cash Payout Liability',obj.cashLiability],['Expected Revenue Recaptured from Play',obj.holdRecapture],['Net Outcome (Positive = Loss)',obj.netRisk],
+          ['Maximum Loss Ceiling (Worst Case)',obj.worstCase],['Loss per User',obj.riskPerUser],['Loss per 100 Users',obj.riskPer100],
         ].map(([k,v])=>`<tr><td><span class="tooltip-target" data-tooltip="${resultDescriptions[k] || k}" title="${resultDescriptions[k] || k}">${k}</span></td><td>${money(v)}</td></tr>`).join('');
 
         document.getElementById('freeResults').innerHTML = rows(free);
@@ -444,8 +465,8 @@
         ];
         const combinedComments = [
           combined.net < 0
-            ? 'Combined Net Expected Risk is negative. In model terms, promotional value is expected to be recaptured by hold at current assumptions.'
-            : 'Combined Net Expected Risk is positive. Expected promotional cash conversion exceeds hold recapture.',
+            ? 'Net Outcome is negative. In model terms, promotional value is expected to be recaptured by hold at current assumptions.'
+            : 'Net Outcome is positive. Expected promotional cash conversion exceeds hold recapture, indicating downside.',
           `Expected Total Revenue Obtained is ${money(combined.expectedRevenueObtained)} and represents modeled hold recapture from rollover activity.`,
           'If negative values are not desired for reporting, apply a downside floor at zero while keeping raw values for finance review.',
           `Scenario check: Current scenario is ${model.scenario}. Compare Expected vs Stress vs Worst Case to see where net risk turns positive.`,
